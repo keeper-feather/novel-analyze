@@ -154,6 +154,29 @@ VOLUME_PATTERNS = [
 }
 ```
 
+**Load existing progress.json (migration handling):**
+```python
+# 读取现有进度
+with open('progress.json', 'r') as f:
+    progress = json.load(f)
+
+# 迁移旧版 schema → 新版 schema
+if "processed_chapters" not in progress:
+    # 旧版使用 current_chapter
+    progress["processed_chapters"] = progress.get("current_chapter", 0)
+
+if "compact_count" not in progress:
+    # 旧版没有 compact_count，根据 processed_chapters 推算
+    progress["compact_count"] = progress["processed_chapters"] // 60
+
+if "current_volume" not in progress:
+    progress["current_volume"] = None
+
+# 保存迁移后的进度
+with open('progress.json', 'w') as f:
+    json.dump(progress, f, indent=2)
+```
+
 **Update progress.json** after each batch (every 20 chapters analyzed):
 - `current_line`: Line number of last processed chapter
 - `processed_chapters`: Total count of processed chapters
@@ -161,6 +184,7 @@ VOLUME_PATTERNS = [
 - `chapter_markers`: Append new chapter markers to array
 - `current_volume`: Update if volume changed
 
+> **[Critical]** 每批必须写入 `processed_chapters` 和 `compact_count`，否则 auto-compact 无法工作！
 > **[Critical]** `compact_count` is persisted to progress.json. After resume, check this value to determine if compact is needed (when `processed_chapters // 60 > compact_count`).
 
 ### Phase 4: Incremental Analysis (Batch Processing)
@@ -211,21 +235,38 @@ if expected_compacts > compact_count:
 1. Read next 20 chapters using `chapter_markers` (by line number)
 2. Extract content between chapter markers
 3. **Use `/obsidian-markdown` skill** to append/update the 5 core documents
-4. Update `progress.json`:
-   - `current_line`: Last processed chapter's line number
-   - `processed_chapters`: Increment by batch size
-   - `chapter_markers`: Append new chapter info if needed
-   - `current_volume`: Update if volume changed
+4. **Update `progress.json` - ALWAYS write these fields:**
+   ```json
+   {
+     "current_line": <last_chapter_line>,
+     "processed_chapters": <累计章节数>,      // 必须！
+     "compact_count": <已执行compact次数>,     // 必须！
+     "current_volume": "<当前卷名>",
+     "chapter_markers": [...],                // 追加新章节
+     "docs_status": {...},
+     "last_update": "<时间戳>"
+   }
+   ```
+   > **[Critical]** 每批必须写入 `processed_chapters` 和 `compact_count`，否则 auto-compact 无法工作！
+
 5. Output brief progress report
-6. **🔴 AUTO-COMPACT CHECK**:
+6. **🔴 AUTO-COMPACT CHECK - 强制执行**:
    ```python
-   expected = processed_chapters // 60
+   # 从 progress.json 读取当前值
+   processed = progress_json["processed_chapters"]
+   compact_count = progress_json.get("compact_count", 0)  # 兼容旧数据
+
+   # 计算应该执行几次 compact
+   expected = processed // 60
+
+   # 如果需要执行 compact
    if expected > compact_count:
-       print("[AUTO-COMPACT] 60章已达成，执行压缩...")
-       compact                    # ← EXECUTE THIS COMMAND
-       compact_count = expected   # ← UPDATE COUNTER
-       save_progress_json()       # ← PERSIST STATE
-       print("[AUTO-COMPACT] 完成，继续分析...")
+       print("🔴 [AUTO-COMPACT] 已达 {} 章，执行压缩...".format(processed))
+       compact                          # ← 立即执行此命令
+       compact_count = expected         # ← 更新计数
+       progress_json["compact_count"] = compact_count  # ← 写入 progress.json
+       save_progress_json()             # ← 保存文件
+       print("✓ [AUTO-COMPACT] 完成，继续分析...")
    ```
 7. **Automatically continue to next batch** (unless interruption conditions met)
 
