@@ -10,6 +10,64 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+def migrate_progress_schema(progress):
+    """Migrate legacy progress fields to the current schema."""
+
+    if "processed_chapters" not in progress:
+        progress["processed_chapters"] = progress.get("current_chapter", 0)
+
+    if "last_compact_at" not in progress:
+        progress["last_compact_at"] = 0
+
+    if "chapters_since_compact" not in progress:
+        progress["chapters_since_compact"] = (
+            progress["processed_chapters"] - progress["last_compact_at"]
+        )
+
+    if "current_volume" not in progress:
+        progress["current_volume"] = None
+
+    progress.pop("current_chapter", None)
+    progress.pop("compact_count", None)
+
+    return progress
+
+def get_resume_targets(project_dir):
+    """Return resume file targets for the current environment."""
+
+    env_name = os.environ.get("AGENT_ENV", "").lower()
+    explicit_path = os.environ.get("NOVEL_ANALYZE_RESUME_FILE")
+    targets = []
+
+    targets.append(Path(project_dir) / ".novel_analyze_resume.json")
+    targets.append(Path.cwd() / ".novel_analyze_resume.json")
+
+    if explicit_path:
+        targets.append(Path(explicit_path).expanduser())
+
+    xdg_state_home = os.environ.get("XDG_STATE_HOME")
+    if xdg_state_home:
+        targets.append(Path(xdg_state_home).expanduser() / "novel-analyze" / "novel_analyze_resume.json")
+    else:
+        targets.append(Path.home() / ".local" / "state" / "novel-analyze" / "novel_analyze_resume.json")
+
+    if "gemini" in env_name or Path.home().joinpath(".gemini").exists():
+        targets.append(Path.home() / ".gemini" / "memory" / "novel_analyze_resume.json")
+
+    if "claude" in env_name or Path.home().joinpath(".claude").exists():
+        targets.append(Path.home() / ".claude" / "memory" / "novel_analyze_resume.json")
+
+    deduped = []
+    seen = set()
+    for target in targets:
+        normalized = target.expanduser()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+
+    return deduped
+
 def find_latest_progress():
     """Find the most recently modified progress.json file."""
 
@@ -45,7 +103,7 @@ def load_progress(progress_file):
     with open(progress_file, 'r', encoding='utf-8') as f:
         progress = json.load(f)
 
-    return progress
+    return migrate_progress_schema(progress)
 
 def main():
     progress_file = find_latest_progress()
@@ -65,7 +123,9 @@ def main():
 
 📖 项目: {progress.get('project_name', '未知')}
 📂 目录: {project_dir}
-📍 当前进度: 第 {progress.get('current_chapter', 0)} 章
+📍 当前进度: 第 {progress.get('processed_chapters', 0)} 章
+📍 当前行号: {progress.get('current_line', '未知')}
+📚 当前卷: {progress.get('current_volume') or '未知'}
 📊 总章数: {progress.get('total_chapters', '未知')}
 ⏰ 最后更新: {progress.get('last_update', '未知')}
 
@@ -94,17 +154,27 @@ def main():
         "project_dir": str(project_dir),
         "progress_file": str(progress_file),
         "project_name": progress.get('project_name', ''),
-        "current_chapter": progress.get('current_chapter', 0),
+        "processed_chapters": progress.get('processed_chapters', 0),
+        "current_line": progress.get('current_line', 0),
+        "current_volume": progress.get('current_volume'),
         "last_resume_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    resume_file = Path.home() / ".claude" / "projects" / "-Users-keeper-----" / "memory" / "novel_analyze_resume.json"
-    resume_file.parent.mkdir(parents=True, exist_ok=True)
+    resume_targets = get_resume_targets(project_dir)
+    written_targets = []
+    for resume_file in resume_targets:
+        try:
+            resume_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(resume_file, 'w', encoding='utf-8') as f:
+                json.dump(resume_info, f, ensure_ascii=False, indent=2)
+            written_targets.append(resume_file)
+        except OSError:
+            continue
 
-    with open(resume_file, 'w', encoding='utf-8') as f:
-        json.dump(resume_info, f, ensure_ascii=False, indent=2)
-
-    print(f"💾 恢复信息已保存，技能将自动继续分析")
+    if written_targets:
+        print(f"💾 恢复信息已保存: {written_targets[0]}")
+    else:
+        print("⚠️ 未能写入恢复信息文件，请检查目录权限或设置 NOVEL_ANALYZE_RESUME_FILE")
 
 if __name__ == "__main__":
     main()
