@@ -9,8 +9,9 @@ This document describes the standard structure for `progress.json` files used in
   "project_name": "小说名称",
   "source_file": "/path/to/source.txt",
   "current_line": 12345,
-  "processed_chapters": 50,
-  "compact_count": 0,
+  "processed_chapters": 125,
+  "last_compact_at": 60,
+  "chapters_since_compact": 65,
   "chapter_markers": [
     {"seq": 1, "title": "第一章 开端", "line": 10, "volume": null},
     {"seq": 2, "title": "第二章 启程", "line": 350, "volume": null},
@@ -36,8 +37,9 @@ This document describes the standard structure for `progress.json` files used in
 | `project_name` | string | Name of the novel being analyzed |
 | `source_file` | string | Absolute path to the source text file |
 | `current_line` | number | **Primary tracking**: Current line number in source file |
-| `processed_chapters` | number | Count of chapters processed (for progress display) |
-| `compact_count` | number | Number of times `compact` command has been executed |
+| `processed_chapters` | number | Total count of chapters processed (absolute value) |
+| `last_compact_at` | number | Value of `processed_chapters` when last compact was executed |
+| `chapters_since_compact` | number | Chapters added since last compact (triggers at ≥60) |
 | `chapter_markers` | array | **Chapter registry**: Each chapter's unique signature |
 | `volume_pattern` | string | Regex pattern for detecting volume headers |
 | `docs_status` | object | Status of each output document |

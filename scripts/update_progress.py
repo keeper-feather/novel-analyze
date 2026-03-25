@@ -12,7 +12,7 @@ from pathlib import Path
 def update_progress(progress_file: str, processed: int = None, line: int = None,
                     doc_status: dict = None, total_chapters: int = None,
                     current_volume: str = None, add_markers: list = None,
-                    compact_count: int = None):
+                    last_compact_at: int = None, chapters_since_compact: int = None):
     """Update an existing progress.json file."""
 
     progress_path = Path(progress_file)
@@ -36,8 +36,10 @@ def update_progress(progress_file: str, processed: int = None, line: int = None,
         if 'chapter_markers' not in data:
             data['chapter_markers'] = []
         data['chapter_markers'].extend(add_markers)
-    if compact_count is not None:
-        data['compact_count'] = compact_count
+    if last_compact_at is not None:
+        data['last_compact_at'] = last_compact_at
+    if chapters_since_compact is not None:
+        data['chapters_since_compact'] = chapters_since_compact
     if doc_status:
         for doc_name, status in doc_status.items():
             if doc_name in data['docs_status']:
@@ -69,7 +71,8 @@ def main():
         print("  --line <n>        Set current line number")
         print("  --total <n>       Set total chapters")
         print("  --volume <name>   Set current volume")
-        print("  --compact <n>     Set compact count")
+        print("  --last-compact <n>  Set last_compact_at value")
+        print("  --since-compact <n> Set chapters_since_compact value")
         print("  --doc <name> <status>  Update doc status (initialized/updating/completed)")
         sys.exit(1)
 
@@ -78,7 +81,8 @@ def main():
     line = None
     total_chapters = None
     current_volume = None
-    compact_count = None
+    last_compact_at = None
+    chapters_since_compact = None
     doc_status = {}
 
     i = 2
@@ -95,8 +99,11 @@ def main():
         elif sys.argv[i] == '--volume' and i + 1 < len(sys.argv):
             current_volume = sys.argv[i + 1]
             i += 2
-        elif sys.argv[i] == '--compact' and i + 1 < len(sys.argv):
-            compact_count = int(sys.argv[i + 1])
+        elif sys.argv[i] == '--last-compact' and i + 1 < len(sys.argv):
+            last_compact_at = int(sys.argv[i + 1])
+            i += 2
+        elif sys.argv[i] == '--since-compact' and i + 1 < len(sys.argv):
+            chapters_since_compact = int(sys.argv[i + 1])
             i += 2
         elif sys.argv[i] == '--doc' and i + 2 < len(sys.argv):
             doc_status[sys.argv[i + 1]] = sys.argv[i + 2]
@@ -104,7 +111,8 @@ def main():
         else:
             i += 1
 
-    update_progress(progress_file, processed, line, doc_status, total_chapters, current_volume, compact_count=compact_count)
+    update_progress(progress_file, processed, line, doc_status, total_chapters, current_volume,
+                    last_compact_at=last_compact_at, chapters_since_compact=chapters_since_compact)
 
 if __name__ == "__main__":
     main()
