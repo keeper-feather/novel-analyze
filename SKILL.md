@@ -21,7 +21,7 @@ After completing each batch (20 chapters):
 **Only stop when:**
 1. User manually stops (Ctrl+C)
 2. Novel analysis complete
-3. Context window error (run compact, then continue)
+3. Context window error (run /compact, then continue)
 
 **Silent auto-continue is the default behavior. No questions, no confirmations.**
 
@@ -216,7 +216,7 @@ chapters_since_compact = new_processed - last_compact_at
 
 ## ⚠️ AUTO-COMPACT TRIGGER ⚠️
 
-**核心逻辑：追踪"自上次 compact 后读取的章节数"**
+**核心逻辑：追踪"自上次 /compact 后读取的章节数"**
 
 **progress.json 字段说明：**
 ```json
@@ -247,7 +247,7 @@ progress_json["chapters_since_compact"] = chapters_since_compact
 # 4. 检查是否需要 compact
 if chapters_since_compact >= 60:
     print("🔴 [AUTO-COMPACT] 自上次 compact 后已处理 {} 章，执行压缩...".format(chapters_since_compact))
-    compact                                    # ← 立即执行此命令
+    /compact                                   # ← 立即执行此命令
     progress_json["last_compact_at"] = processed  # ← 更新 compact 基准点
     progress_json["chapters_since_compact"] = 0  # ← 重置计数器
     save_progress_json()                       # ← 保存文件
@@ -260,10 +260,10 @@ else:
 ```
 Batch 1: chapters_since_compact = 20  → 继续分析
 Batch 2: chapters_since_compact = 40  → 继续分析
-Batch 3: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
+Batch 3: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
 Batch 4: chapters_since_compact = 20  → 继续分析
 Batch 5: chapters_since_compact = 40  → 继续分析
-Batch 6: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
+Batch 6: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
 ```
 
 ---
@@ -273,11 +273,11 @@ Batch 6: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
 - 仅在以下情况暂停：
   1. 终端中断/用户手动停止
   2. 小说分析完成（到达末尾）
-  3. **执行 compact 时自动压缩，完成后继续**
+  3. **执行 /compact 时自动压缩，完成后继续**
 - 每批完成后输出简要进度报告，然后自动进入下一批
 
 **上下文压缩机制**:
-- 使用 `compact` 命令压缩对话上下文
+- 使用 `/compact` 命令压缩对话上下文
 - 保留关键信息：project_dir, progress.json 路径, 当前任务状态
 - 每处理 60 章自动执行一次，避免上下文积累过多
 
@@ -309,7 +309,7 @@ Batch 6: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
    ```python
    if chapters_since_compact >= 60:
        print("🔴 [AUTO-COMPACT] 已达 {} 章，执行压缩...")
-       compact
+       /compact
        progress_json["last_compact_at"] = processed
        progress_json["chapters_since_compact"] = 0
        save_progress_json()
@@ -323,7 +323,7 @@ Batch 6: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
 已分析：第 {start_seq}-{end_seq} 章
 当前行：{line}
 当前卷：{current_volume}
-自上次 compact：{chapters_since_compact} / 60 章
+自上次 /compact：{chapters_since_compact} / 60 章
 总进度：{processed}/{total} 章 ({percentage}%)
 文档状态：
   - 01_总览: {status}
@@ -338,14 +338,14 @@ Batch 6: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
 
 **1. Context Window Limit (上下文窗口限制):**
 
-**策略一：首选 compact 命令**
+**策略一：首选 /compact 命令**
 - 当遇到上下文限额错误时：
   1. 保存当前进度到 `progress.json`
-  2. **执行 `compact` 命令**压缩上下文
+  2. **执行 `/compact` 命令**压缩上下文
   3. 自动继续分析（无需用户操作）
 
 **策略二：备选跨会话恢复**
-- 如果 compact 后仍有问题：
+- 如果 /compact 后仍有问题：
   1. 保存进度到 `progress.json`
   2. 输出提示：
      ```
@@ -357,7 +357,7 @@ Batch 6: chapters_since_compact = 60  → 🔴 COMPACT → 重置为 0
   3. 用户开启新对话说"继续"，自动恢复
 
 **预防性压缩**：
-- 每 60 章（每 3 批）自动执行 `compact` 命令
+- 每 60 章（每 3 批）自动执行 `/compact` 命令
 - 避免上下文积累到达限额
 
 ### Phase 5: Output Documents
@@ -679,20 +679,20 @@ tags: [分析/技巧]
 5. **Checkpoint every batch**: Save progress.json after every batch (enables cross-session resume)
 6. **Auto-compact every 60 chapters**: Track chapters since last compact, execute when ≥60
 7. **Use /obsidian-markdown skill**: For all Markdown output generation
-8. **Handle context window limit**: First try `compact`, if still issues then switch session
+8. **Handle context window limit**: First try `/compact`, if still issues then switch session
 9. **Enable seamless resume**: New session reads progress.json and continues from exact line
 
 > **三重保障机制**：
 > - **章节扫描**：启动时扫描全文，建立章节签名表（处理多卷重复章节名）
-> - **上下文压缩**：追踪 `chapters_since_compact`，满 60 章自动执行 compact
-> - **跨会话恢复**：用户说"继续"即可从精确行号恢复，compact 基准点不丢失
+> - **上下文压缩**：追踪 `chapters_since_compact`，满 60 章自动执行 /compact
+> - **跨会话恢复**：用户说"继续"即可从精确行号恢复，/compact 基准点不丢失
 
 > **Compact 检查逻辑**：
 > ```python
 > # 每批完成后检查
 > chapters_since_compact = processed_chapters - last_compact_at
 > if chapters_since_compact >= 60:
->     run compact command
+>     run /compact command
 >     last_compact_at = processed_chapters
 >     chapters_since_compact = 0
 >     save to progress.json
