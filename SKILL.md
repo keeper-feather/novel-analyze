@@ -167,12 +167,39 @@ VOLUME_PATTERNS = [
 
 **Batch size: 20 chapters per iteration**
 
+## ⚠️ AUTO-COMPACT TRIGGER ⚠️
+
+**MANDATORY: After every 60 chapters (every 3 batches), you MUST run the `compact` command:**
+
+```bash
+compact
+```
+
+**Check this after EACH batch completes:**
+```python
+expected_compacts = processed_chapters // 60
+if expected_compacts > compact_count:
+    # STOP EVERYTHING
+    # EXECUTE: compact
+    # UPDATE: compact_count = expected_compacts
+    # SAVE to progress.json
+    # THEN continue to next batch
+```
+
+**Visual trigger indicator:**
+- After batch 1-2: Continue normally
+- **After batch 3 (60 chapters): 🔴 COMPACT REQUIRED**
+- After batch 4-5: Continue normally
+- **After batch 6 (120 chapters): 🔴 COMPACT REQUIRED**
+
+---
+
 **Automatic Continuation (重要)**:
 - 完成每 20 章分析后，**自动继续**下 20 章
 - 仅在以下情况暂停：
   1. 终端中断/用户手动停止
   2. 小说分析完成（到达末尾）
-- **每 60 章（每 3 批）自动压缩上下文**
+  3. **到达 60 章倍数点 → 执行 compact → 自动继续**
 - 每批完成后输出简要进度报告，然后自动进入下一批
 
 **上下文压缩机制**:
@@ -190,9 +217,16 @@ VOLUME_PATTERNS = [
    - `chapter_markers`: Append new chapter info if needed
    - `current_volume`: Update if volume changed
 5. Output brief progress report
-6. **Check if compact needed**: `if (processed_chapters // 60) > compact_count`:
-   - Run `compact` command
-   - Increment `compact_count` in progress.json
+6. **🔴 AUTO-COMPACT CHECK**:
+   ```python
+   expected = processed_chapters // 60
+   if expected > compact_count:
+       print("[AUTO-COMPACT] 60章已达成，执行压缩...")
+       compact                    # ← EXECUTE THIS COMMAND
+       compact_count = expected   # ← UPDATE COUNTER
+       save_progress_json()       # ← PERSIST STATE
+       print("[AUTO-COMPACT] 完成，继续分析...")
+   ```
 7. **Automatically continue to next batch** (unless interruption conditions met)
 
 **Progress Report Format (每批完成后输出):**
