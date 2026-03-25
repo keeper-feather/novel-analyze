@@ -39,7 +39,7 @@ This document describes the standard structure for `progress.json` files used in
 | `current_line` | number | **Primary tracking**: Current line number in source file |
 | `processed_chapters` | number | Total count of chapters processed (absolute value) |
 | `last_compact_at` | number | Value of `processed_chapters` when last compact was executed |
-| `chapters_since_compact` | number | Chapters added since last compact (triggers at ≥60) |
+| `chapters_since_compact` | number | Chapters added since last compact (triggers at ≥40) |
 | `chapter_markers` | array | **Chapter registry**: Each chapter's unique signature |
 | `volume_pattern` | string | Regex pattern for detecting volume headers |
 | `docs_status` | object | Status of each output document |

@@ -222,48 +222,66 @@ chapters_since_compact = new_processed - last_compact_at
 ```json
 {
   "processed_chapters": 125,     // 累计已处理章节数（绝对值）
-  "last_compact_at": 60,         // 上次 compact 时的 processed_chapters 值
-  "chapters_since_compact": 65   // 自上次 compact 后新增章节数
+  "last_compact_at": 80,         // 上次 compact 时的 processed_chapters 值
+  "chapters_since_compact": 45   // 自上次 compact 后新增章节数
 }
 ```
 
-**Compact 触发条件：当 `chapters_since_compact >= 60`**
+**Compact 触发条件：当 `chapters_since_compact >= 40`**
 
 ---
 
-**每批完成后的检查流程：**
+**正确的 Auto-Compact 执行流程（重要！）：**
 
 ```python
-# 1. 读取 progress.json
-processed = progress_json.get("processed_chapters", 0)
-last_compact_at = progress_json.get("last_compact_at", 0)
+# 每批完成后执行此流程
 
-# 2. 计算自上次 compact 后新增的章节数
+# 1. 计算当前状态
+processed = previous_processed + 20  # 当前累计章节数
+last_compact_at = progress_json.get("last_compact_at", 0)
 chapters_since_compact = processed - last_compact_at
 
-# 3. 更新到 progress.json（每批都写入）
-progress_json["chapters_since_compact"] = chapters_since_compact
+# 2. 检查是否需要 compact
+if chapters_since_compact >= 40:
+    # === 开始 COMPACT 流程 ===
 
-# 4. 检查是否需要 compact
-if chapters_since_compact >= 60:
-    print("🔴 [AUTO-COMPACT] 自上次 compact 后已处理 {} 章，执行压缩...".format(chapters_since_compact))
-    /compact                                   # ← 立即执行此命令
-    progress_json["last_compact_at"] = processed  # ← 更新 compact 基准点
-    progress_json["chapters_since_compact"] = 0  # ← 重置计数器
-    save_progress_json()                       # ← 保存文件
-    print("✓ [AUTO-COMPACT] 完成，继续分析...")
+    # 步骤 1: 保存当前进度到 progress.json
+    progress_json["processed_chapters"] = processed
+    progress_json["chapters_since_compact"] = chapters_since_compact
+    save_progress_json()
+
+    # 步骤 2: 立即执行 /compact 命令
+    # 重要：这不是伪代码，必须实际执行此命令！
+    # 直接输出命令，让系统执行
+    /compact
+
+    # 步骤 3: 更新 compact 基准点
+    progress_json["last_compact_at"] = processed
+    progress_json["chapters_since_compact"] = 0
+    save_progress_json()
+
+    # 步骤 4: 继续分析下一批（不询问，不等待）
 else:
-    print("[Info] 距离下次 compact 还有 {} 章".format(60 - chapters_since_compact))
+    # 正常更新进度，继续下一批
+    progress_json["processed_chapters"] = processed
+    progress_json["chapters_since_compact"] = chapters_since_compact
+    save_progress_json()
 ```
+
+**关键要点：**
+1. **先保存进度** → 确保 compact 前数据不丢失
+2. **立即执行 `/compact`** → 这是 Claude Code 斜杠命令，必须实际执行
+3. **更新基准点** → `last_compact_at = processed`, `chapters_since_compact = 0`
+4. **继续分析** → 无需用户确认，自动进行下一批
+
+> **[CRITICAL]** 当 `chapters_since_compact >= 40` 时，必须输出 `/compact` 命令并执行它。不要只是打印消息，必须实际调用命令！
 
 **Visual trigger indicator:**
 ```
 Batch 1: chapters_since_compact = 20  → 继续分析
-Batch 2: chapters_since_compact = 40  → 继续分析
-Batch 3: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
-Batch 4: chapters_since_compact = 20  → 继续分析
-Batch 5: chapters_since_compact = 40  → 继续分析
-Batch 6: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
+Batch 2: chapters_since_compact = 40  → 🔴 /COMPACT → 重置为 0
+Batch 3: chapters_since_compact = 20  → 继续分析
+Batch 4: chapters_since_compact = 40  → 🔴 /COMPACT → 重置为 0
 ```
 
 ---
@@ -279,7 +297,7 @@ Batch 6: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
 **上下文压缩机制**:
 - 使用 `/compact` 命令压缩对话上下文
 - 保留关键信息：project_dir, progress.json 路径, 当前任务状态
-- 每处理 60 章自动执行一次，避免上下文积累过多
+- 每处理 40 章自动执行一次，避免上下文积累过多
 
 **For each batch:**
 1. Read next 20 chapters using `chapter_markers` (by line number)
@@ -307,13 +325,21 @@ Batch 6: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
 5. Output brief progress report
 6. **🔴 AUTO-COMPACT CHECK**:
    ```python
-   if chapters_since_compact >= 60:
-       print("🔴 [AUTO-COMPACT] 已达 {} 章，执行压缩...")
+   if chapters_since_compact >= 40:
+       # 步骤 1: 保存进度
+       progress_json["processed_chapters"] = processed
+       progress_json["chapters_since_compact"] = chapters_since_compact
+       save_progress_json()
+
+       # 步骤 2: 立即执行压缩命令（必须实际执行！）
        /compact
+
+       # 步骤 3: 更新基准点
        progress_json["last_compact_at"] = processed
        progress_json["chapters_since_compact"] = 0
        save_progress_json()
-       print("✓ [AUTO-COMPACT] 完成，继续分析...")
+
+       # 步骤 4: 继续分析（无确认，无等待）
    ```
 7. **Automatically continue to next batch** (unless interruption conditions met)
 
@@ -323,7 +349,7 @@ Batch 6: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
 已分析：第 {start_seq}-{end_seq} 章
 当前行：{line}
 当前卷：{current_volume}
-自上次 /compact：{chapters_since_compact} / 60 章
+自上次 /compact：{chapters_since_compact} / 40 章
 总进度：{processed}/{total} 章 ({percentage}%)
 文档状态：
   - 01_总览: {status}
@@ -357,7 +383,7 @@ Batch 6: chapters_since_compact = 60  → 🔴 /COMPACT → 重置为 0
   3. 用户开启新对话说"继续"，自动恢复
 
 **预防性压缩**：
-- 每 60 章（每 3 批）自动执行 `/compact` 命令
+- 每 40 章（每 2 批）自动执行 `/compact` 命令
 - 避免上下文积累到达限额
 
 ### Phase 5: Output Documents
@@ -677,25 +703,29 @@ tags: [分析/技巧]
 3. **Fixed batch size**: 20 chapters per batch
 4. **Auto-continue**: After each batch, automatically continue to next batch
 5. **Checkpoint every batch**: Save progress.json after every batch (enables cross-session resume)
-6. **Auto-compact every 60 chapters**: Track chapters since last compact, execute when ≥60
+6. **Auto-compact every 40 chapters**: Track chapters since last compact, execute when ≥40
 7. **Use /obsidian-markdown skill**: For all Markdown output generation
 8. **Handle context window limit**: First try `/compact`, if still issues then switch session
 9. **Enable seamless resume**: New session reads progress.json and continues from exact line
 
 > **三重保障机制**：
 > - **章节扫描**：启动时扫描全文，建立章节签名表（处理多卷重复章节名）
-> - **上下文压缩**：追踪 `chapters_since_compact`，满 60 章自动执行 /compact
+> - **上下文压缩**：追踪 `chapters_since_compact`，满 40 章自动执行 /compact
 > - **跨会话恢复**：用户说"继续"即可从精确行号恢复，/compact 基准点不丢失
 
 > **Compact 检查逻辑**：
 > ```python
 > # 每批完成后检查
 > chapters_since_compact = processed_chapters - last_compact_at
-> if chapters_since_compact >= 60:
+> if chapters_since_compact >= 40:
+>     # 1. 保存进度
+>     save progress.json
+>     # 2. 执行压缩
 >     run /compact command
+>     # 3. 更新基准点
 >     last_compact_at = processed_chapters
 >     chapters_since_compact = 0
->     save to progress.json
+>     save progress.json
 > ```
 
 ---
