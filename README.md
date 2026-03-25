@@ -23,7 +23,7 @@
 
 ```bash
 # 安装 obsidian-markdown（必需）
-npx skills add https://github.com/anthropics/obsidian-markdown
+npx skills add https://github.com/kepano/obsidian-skills --skill obsidian-markdown
 
 # 安装 novel-analyze
 npx skills add https://github.com/keeper-feather/novel-analyze
@@ -194,7 +194,7 @@ This skill requires the **obsidian-markdown** skill:
 
 ```bash
 # Install obsidian-markdown (required)
-npx skills add https://github.com/anthropics/obsidian-markdown
+npx skills add https://github.com/kepano/obsidian-skills --skill obsidian-markdown
 
 # Install novel-analyze
 npx skills add https://github.com/keeper-feather/novel-analyze
