@@ -24,9 +24,11 @@ After completing each batch (20 chapters):
 3. Context window pressure requires compression
 
 **Environment-aware compression policy:**
-- **Gemini CLI**: when `chapters_since_compact >= 40` or context pressure appears, output exactly one line: `/compress`
-- **Claude**: when `chapters_since_compact >= 40` or context pressure appears, output exactly one line: `/compact`
+- **Gemini CLI**: when `chapters_since_compact >= 40` or context pressure appears, **execute** the command: `/compress`
+- **Claude**: when `chapters_since_compact >= 40` or context pressure appears, **execute** the command: `/compact`
 - **Codex / other CLI environments**: if slash commands are not known to be executable, save progress first, then clearly instruct the user to run the appropriate compression command manually and resume with `继续分析`
+
+> **[CRITICAL]** In Claude environment, you must **execute** the `/compact` command, not merely output it as text. The command should be run to actually compress the conversation context.
 
 **Silent auto-continue is the default behavior. No questions, no confirmations.**
 
@@ -59,7 +61,7 @@ After completing each batch (20 chapters):
 
 ## Core Workflow
 
-The analysis process follows a strict five-phase protocol:
+The analysis process follows a five-phase protocol:
 
 ### Phase 1: Initialization & Workspace Setup
 
@@ -100,101 +102,26 @@ Support multiple input formats. For non-.txt files:
 
 ### Phase 2.5: Chapter Detection (章节识别)
 
-**Before analysis begins, scan source file to build chapter registry:**
+**Before analysis begins, scan source file to build chapter registry.**
 
-```python
-# Chapter detection patterns (支持中英文混合)
-CHAPTER_PATTERNS = [
-    r'^第[一二三四五六七八九十百千万\d]+章[^\n]*$',      # 第X章
-    r'^第[一二三四五六七八九十百千万\d]+节[^\n]*$',      # 第X节
-    r'^第[一二三四五六七八九十百千万\d]+回[^\n]*$',      # 第X回
-    r'^\d+[\.\s]+[^\n]*$',                              # 1. 标题 或 1 标题
-    r'^Chapter\s+\d+[^\n]*$',                           # Chapter X
-    r'^卷[一二三四五六七八九十百千万\d]+[^\n]*$',        # 卷X
-]
+See [references/SCHEMA.md](references/SCHEMA.md) for:
+- Chapter detection patterns (支持中英文混合)
+- Multi-volume handling (多卷处理)
+- Chapter marker structure
 
-VOLUME_PATTERNS = [
-    r'^第[一二三四五六七八九十百千万]+卷',                # 第X卷
-    r'^Book\s+[IVXLCDM\d]+',                             # Book X
-    r'^Volume\s+\d+',                                    # Volume X
-]
-```
-
-**Multi-volume handling (多卷处理):**
-- **Primary tracking**: Line number in source file (absolute position)
-- **Chapter registry**: Each chapter gets unique `seq` number, records title + line + volume
-- **Volume detection**: Auto-detect volume headers, track current volume
-
-```json
-// chapter_markers example
-[
-  {"seq": 1, "title": "第一章 开端", "line": 10, "volume": null},
-  {"seq": 25, "title": "第一章 重生", "line": 8900, "volume": "第一卷"},
-  {"seq": 50, "title": "第一章 觉醒", "line": 18500, "volume": "第二卷"}
-]
-```
-
-> **[Critical]** Always use line number for position tracking. Chapter titles can be duplicated across volumes, but line numbers are unique.
+**Critical**: Always use line number for position tracking. Chapter titles can be duplicated across volumes, but line numbers are unique.
 
 ### Phase 3: Progress State Management
 
 **Initialize progress.json** (if new project):
-```json
-{
-  "project_name": "小说名称",
-  "source_file": "path/to/source.txt",
-  "current_line": 0,
-  "processed_chapters": 0,
-  "last_compact_at": 0,
-  "chapters_since_compact": 0,
-  "chapter_markers": [],
-  "current_volume": null,
-  "docs_status": {
-    "01_总览": "initialized",
-    "02_剧情分析": "initialized",
-    "03_人物": "initialized",
-    "04_文字风格": "initialized",
-    "05_写作技巧": "initialized"
-  },
-  "last_update": "YYYY-MM-DD HH:MM:SS"
-}
-```
 
-**Load existing progress.json (migration handling):**
-```python
-# 读取现有进度
-with open('progress.json', 'r') as f:
-    progress = json.load(f)
-
-# 迁移旧版 schema → 新版 schema
-if "processed_chapters" not in progress:
-    # 旧版使用 current_chapter
-    progress["processed_chapters"] = progress.get("current_chapter", 0)
-
-if "last_compact_at" not in progress:
-    # 旧版没有此字段，初始化为 0
-    progress["last_compact_at"] = 0
-
-if "chapters_since_compact" not in progress:
-    # 根据 processed_chapters 和 last_compact_at 计算
-    last_compact = progress.get("last_compact_at", 0)
-    progress["chapters_since_compact"] = progress["processed_chapters"] - last_compact
-
-if "current_volume" not in progress:
-    progress["current_volume"] = None
-
-# 清理旧字段
-if "compact_count" in progress:
-    del progress["compact_count"]  # 不再需要此字段
-if "current_chapter" in progress:
-    del progress["current_chapter"]  # 使用 processed_chapters
-
-# 保存迁移后的进度
-with open('progress.json', 'w') as f:
-    json.dump(progress, f, indent=2)
-```
+See [references/SCHEMA.md](references/SCHEMA.md) for:
+- Standard progress.json schema
+- Field descriptions
+- Migration handling from old schemas
 
 **Update progress.json** after each batch (every 20 chapters analyzed):
+
 ```python
 # 计算新值
 new_processed = previous_processed + 20
@@ -221,7 +148,7 @@ chapters_since_compact = new_processed - last_compact_at
 
 ## ⚠️ AUTO-COMPACT TRIGGER ⚠️
 
-**核心逻辑：追踪“自上次成功压缩上下文后读取的章节数”**
+**核心逻辑：追踪"自上次成功压缩上下文后读取的章节数"**
 
 **progress.json 字段说明：**
 ```json
@@ -280,7 +207,7 @@ else:
 1. **先保存进度** → 确保 compact 前数据不丢失
 2. **Gemini CLI** → 立即输出单独一行 `/compress`
 3. **Claude** → 立即输出单独一行 `/compact`
-4. **其他 CLI** → 不要伪装成“已经执行了 slash command”；必须明确提示用户手动运行对应压缩命令
+4. **其他 CLI** → 不要伪装成"已经执行了 slash command"；必须明确提示用户手动运行对应压缩命令
 5. **仅在压缩真实发生后更新基准点** → `last_compact_at = processed`, `chapters_since_compact = 0`
 6. **继续分析** → Claude/Gemini 可在压缩后自动继续；其他环境在用户执行压缩并恢复后继续
 
@@ -318,48 +245,9 @@ Batch 4: chapters_since_compact = 40  → 🔴 触发压缩流程
 1. Read next 20 chapters using `chapter_markers` (by line number)
 2. Extract content between chapter markers
 3. **Use `/obsidian-markdown` skill** to append/update the 5 core documents
-4. **Update `progress.json` - 每批必须更新:**
-   ```python
-   # 计算并更新
-   processed = previous_processed + batch_chapters
-   last_compact_at = progress_json.get("last_compact_at", 0)
-   chapters_since_compact = processed - last_compact_at
-
-   # 写入 progress.json
-   {
-     "processed_chapters": processed,
-     "last_compact_at": last_compact_at,
-     "chapters_since_compact": chapters_since_compact,
-     "current_line": <line>,
-     "current_volume": "<volume>",
-     "docs_status": {...},
-     "last_update": "<timestamp>"
-   }
-   ```
-
+4. **Update `progress.json` - 每批必须更新**
 5. Output brief progress report
-6. **🔴 AUTO-COMPACT CHECK**:
-   ```python
-   if chapters_since_compact >= 40:
-       # 步骤 1: 保存进度
-       progress_json["processed_chapters"] = processed
-       progress_json["chapters_since_compact"] = chapters_since_compact
-       save_progress_json()
-
-       # 步骤 2: 按环境分流
-       if environment == "gemini":
-           /compress
-           progress_json["last_compact_at"] = processed
-           progress_json["chapters_since_compact"] = 0
-           save_progress_json()
-       elif environment == "claude":
-           /compact
-           progress_json["last_compact_at"] = processed
-           progress_json["chapters_since_compact"] = 0
-           save_progress_json()
-       else:
-           print("请手动执行压缩命令，之后回复：继续分析")
-   ```
+6. **🔴 AUTO-COMPACT CHECK** (see flow above)
 7. **Automatically continue to next batch** (unless interruption conditions met)
 
 **Progress Report Format (每批完成后输出):**
@@ -411,294 +299,16 @@ Batch 4: chapters_since_compact = 40  → 🔴 触发压缩流程
 
 Generate exactly **5 core Markdown documents** using Obsidian Flavored Markdown syntax (via `/obsidian-markdown` skill):
 
----
-
-## 📁 01_总览.md (Overview & Outline)
-
-```yaml
----
-title: "《[小说名]》总览"
-tags:
-  - [genre]        // 玄幻/奇幻/武侠/仙侠/都市/科幻/悬疑/历史/游戏/轻小说/言情
-  - [subgenre]     // 重生流/穿越流/系统流/无限流/退婚流/凡人流/无敌流/苟道流
-  - 分析/总览
-created: YYYY-MM-DD
----
-
-# 《[小说名]》总览
-
-## 元数据
-- **作者**: [作者名]
-- **题材**: [[题材分类]]
-- **流派**: [[流派标签]]
-- **字数**: [估计字数]
-- **状态**: [连载中/已完结]
-
-## 世界观与设定
-
-### 背景设定
-[描述故事发生的世界背景，物理/魔法/修真社会规则]
-
-### 力量/升级体系
-| 境界/等级 | 描述 | 突破条件 |
-|-----------|------|----------|
-| [等级1] | [描述] | [条件] |
-| [等级2] | [描述] | [条件] |
-
-**资源驱动力**: [什么资源推动角色变强？]
-
-## 主线目标
-[一句话概括主角的核心目标]
-
-## 相关文档
-- [[02_剧情分析]]
-- [[03_人物]]
-- [[04_文字风格]]
-- [[05_写作技巧]]
-```
-
----
-
-## 📁 02_剧情分析.md (Plot Progression & Logic)
-
-```yaml
----
-title: "《[小说名]》剧情分析"
-tags: [分析/剧情]
----
-
-# 剧情分析
-
-## 剧情推进引擎
-[分析故事靠什么驱动：外部危机？复仇执念？系统任务？生存压力？]
-
-## 主线梳理
-
-### [篇章/阶段名称] (第X-Y章)
-- **核心冲突**: [是什么冲突？]
-- **关键事件**:
-  - [事件1] → [影响]
-  - [事件2] → [影响]
-
-## 伏笔与暗线
-
-| 伏笔内容 | 埋线位置 | 收线位置 | 状态 |
-|---------|---------|---------|------|
-| [伏笔描述] | 第X章 | 第Y章 | 已回收/待回收 |
-
-## 逻辑闭环分析
-[分析重要剧情事件的起承转合，逻辑是否自洽，填坑情况]
-```
-
----
-
-## 📁 03_人物.md (Characters & Portrayal)
-
-```yaml
----
-title: "《[小说名]》人物档案"
-tags: [分析/人物]
----
-
-# 人物档案
-
-## [主角姓名] (主角)
-
-### 基本信息
-- **身份**: [身份/职业]
-- **核心动机**: [驱动角色的深层欲望]
-- **性格标签**: #性格标签
-
-### 性格特征
-[描述性格特点，包括反差和成长]
-
-### 关键剧情塑造
-
-| 章节/事件 | 行为 | 塑造的性格侧面 |
-|----------|------|---------------|
-| [第X章 - 事件名] | [角色做了什么] | [展现了什么特质] |
-
-### 人物关系
-- 与[[配角A]]: [关系描述]
-- 与[[反派B]]: [关系描述]
-
----
-
-## [配角/反派姓名]
-[按相同结构记录重要配角]
-```
-
----
-
-## 📁 04_文字风格.md (Writing Style Analysis)
-
-```yaml
----
-title: "《[小说名]》文字风格分析"
-tags: [分析/文风]
----
-
-# 文字风格分析
-
-> 用显微镜级别拆解作者的写作手法，**持续从原文中摘抄积累实例**
-
-## 1. 文戏描写（张力与博弈）
-
-### 特点总结
-[如何处理权力交锋、情感拉扯、智斗博弈的张力？]
-
-### 实例积累（持续追加）
-
-#### 潜台词运用
-> 第X章：[引用原文]
-> **分析**：[分析台面下的潜台词]
-
-#### 细节暗示
-> 第X章：[引用原文]
-> **分析**：[分析如何通过微小动作表现心理压迫]
-
----
-
-## 2. 战斗描写（画面与痛感）
-
-### 特点总结
-- 感官调用：[使用了哪些感官]
-- 空间调度：[如何交代地形和走位]
-- 动词特点：[高频使用的动词类型]
-
-### 实例积累（持续追加）
-
-#### 画面与动感
-> 第X章：[引用原文]
-> **分析**：[分析画面感和动感]
-
-#### 痛感与暴力
-> 第X章：[引用原文]
-> **分析**：[分析如何表现痛感]
-
-#### 短句快节奏
-> 第X章：[引用原文]
-> **分析**：[分析短句组合如何加快呼吸感]
-
----
-
-## 3. 环境描写（气氛与隐喻）
-
-### 实例积累（持续追加）
-
-#### 气氛渲染
-> 第X章：[引用原文]
-> **分析**：[分析环境如何渲染气氛]
-
-#### 命运暗示
-> 第X章：[引用原文]
-> **分析**：[分析环境对人物命运或剧情走向的暗示]
-
----
-
-## 4. 心理活动描写（潜意识剖析）
-
-### 实例积累（持续追加）
-
-#### 挣扎与矛盾
-> 第X章：[引用原文]
-> **分析**：[分析心理挣扎的表现]
-
-#### 潜意识暴露
-> 第X章：[引用原文]
-> **分析**：[分析如何剥开角色伪装]
-
----
-
-## 5. 外貌描写（骨相与皮相）
-
-### 实例积累（持续追加）
-
-#### 衣着器物
-> 第X章：[引用原文]
-> **分析**：[分析]
-
-#### 骨相气质
-> 第X章：[引用原文]
-> **分析**：[分析]
-
----
-
-## 6. 对话描写（闻声知人）
-
-### 实例积累（持续追加）
-
-#### 身份体现
-> 第X章 [角色]：[引用对话]
-> **分析**：[分析对话如何体现身份地位]
-
-#### 情绪变化
-> 第X章 [角色]：[引用对话]
-> **分析**：[分析对话中的情绪层次]
-
----
-
-## 7. 排版与段落习惯
-
-### 实例积累（持续追加）
-
-#### 短段落示例
-> 第X章：[引用原文短段落排版]
-> **效果**：[分析]
-
----
-
-## 8. 统计数据
-
-| 维度 | 实例数量 |
-|------|----------|
-| 文戏 | X条 |
-| 战斗 | X条 |
-| 环境 | X条 |
-| 心理 | X条 |
-| 外貌 | X条 |
-| 对话 | X条 |
-| **总计** | **X条** |
-```
-
-> **[重要]** 文字风格分析的核心在于**实例积累**。每分析一批章节，都必须从原文中摘抄典型例子，注明章节位置，并附带简短分析。随着分析深入，这些实例将形成丰富的写作技法资料库。
-
----
-
-## 📁 05_写作技巧.md (Writing Techniques)
-
-```yaml
----
-title: "《[小说名]》写作技巧分析"
-tags: [分析/技巧]
----
-
-# 写作技巧分析
-
-## 视角运用
-- [视角类型]: [使用场景和效果]
-  - 例子: [引用原文说明]
-
-## Show, Don't Tell
-[展示与讲述的比例分析]
-- 展示占比: [估计比例]
-- 典型展示手法: [描述]
-- 典型讲述手法: [描述]
-
-> [对比例子]
-
-## 悬念与卡点设置
-[章节末尾如何设置悬念吸引读者继续阅读？]
-
-### 常用卡点类型
-1. [类型1]: [说明]
-2. [类型2]: [说明]
-
-> [引用原文卡点例子]
-
-## 节奏控制
-[整体叙事节奏：快/慢/变化规律]
-```
+**Document templates**: See [references/TEMPLATES.md](references/TEMPLATES.md) for detailed templates for:
+- `01_总览.md` - Overview & Outline
+- `02_剧情分析.md` - Plot Progression & Logic
+- `03_人物.md` - Characters & Portrayal
+- `04_文字风格.md` - Writing Style Analysis
+- `05_写作技巧.md` - Writing Techniques
+
+**Genre classification**: See [references/TAGS.md](references/TAGS.md) for standard genre and flow type tags.
+
+**Analysis methodology**: See [references/ANALYSIS_GUIDE.md](references/ANALYSIS_GUIDE.md) for deep analysis methodology and what to extract.
 
 ---
 
@@ -750,12 +360,14 @@ tags: [分析/技巧]
 
 ---
 
-## Supported Genres Classification
+## Progressive Disclosure Reference
 
-**Main Categories (主分类):**
-- `#玄幻` `#奇幻` `#武侠` `#仙侠` `#都市` `#科幻` `#悬疑` `#历史` `#游戏` `#轻小说` `#言情`
+This skill uses a three-level loading system:
 
-**Flow Types (流派):**
-- `#重生流` `#穿越流` `#系统流` `#无限流` `#退婚流` `#凡人流` `#无敌流` `#苟道流` `#群像流` `#多女主` `#单女主`
+1. **SKILL.md (this file)** - Core workflow and critical behaviors (~300 lines)
+2. **references/TEMPLATES.md** - Document templates for the 5 output files
+3. **references/SCHEMA.md** - Progress.json schema, chapter detection patterns, batch processing
+4. **references/TAGS.md** - Genre and flow type classification tags
+5. **references/ANALYSIS_GUIDE.md** - Deep analysis methodology and extraction guidelines
 
-Match existing tags when possible, create new ones when needed.
+When in doubt, consult the appropriate reference file for detailed specifications.
